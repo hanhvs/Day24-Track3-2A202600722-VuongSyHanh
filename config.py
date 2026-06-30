@@ -23,7 +23,9 @@ GEN_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 # --- Qdrant (same as Day 18) ---
 QDRANT_HOST = "localhost"
 QDRANT_PORT = 6333
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")  # empty = send empty api-key header
 COLLECTION_NAME = "lab24_production"
+NAIVE_COLLECTION = COLLECTION_NAME + "_naive"
 
 # --- Embedding (same as Day 18) ---
 EMBEDDING_MODEL = "BAAI/bge-m3"

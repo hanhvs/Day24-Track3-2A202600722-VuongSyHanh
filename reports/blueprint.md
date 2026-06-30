@@ -2,6 +2,7 @@
 
 **Sinh viên:** Vương Sỹ Hành (MSSV 2A202600722)
 **Ngày:** Day 24 — Track 3
+**LLM:** openai/gpt-4o-mini (qua OpenRouter) · RAGAS embeddings: local (multilingual MiniLM)
 
 ---
 
@@ -10,17 +11,17 @@
 ```
 User Input
     │
-    ▼ (~5ms P95)
+    ▼ (~6ms P95)
 [Presidio PII Scan]
     │ block if: VN_CCCD / VN_PHONE / EMAIL detected
     │ action:   return 400 + "PII detected in query"
-    ▼ (~<1ms P95 heuristic, ~200-500ms khi dùng NeMo LLM)
+    ▼ (~54ms P95 — NeMo Guardrails LLM)
 [NeMo Input Rail]
     │ block if: off-topic / jailbreak / prompt injection
     │ action:   return 503 + refuse message
     ▼
 [RAG Pipeline (Day 18)]
-    │ M1 Chunk → M2 Search → M3 Rerank → GPT-4o-mini
+    │ M1 Chunk → M2 Hybrid Search → M3 Rerank → gpt-4o-mini
     ▼
 [NeMo Output Rail]
     │ flag if:  PII in response / sensitive content
@@ -29,29 +30,27 @@ User Input
 User Response
 ```
 
-Lưu ý triển khai: tầng NeMo Input/Output Rail có **fallback heuristic** (mirror các
-flow trong `rails.co`) để hệ thống vẫn an toàn và đo được khi LLM API tạm thời không
-khả dụng. Khi có `OPENAI_API_KEY`, rail sẽ gọi NeMo Guardrails (gpt-4o-mini) đầy đủ.
+Tầng NeMo Input/Output Rail có thêm **fallback heuristic** (mirror các flow trong
+`rails.co`) để hệ thống vẫn an toàn khi LLM API tạm thời lỗi/timeout.
 
 ---
 
 ## Latency Budget
 
-*(Điền từ kết quả Task 12 — measure_p95_latency(), n_runs=10)*
+*(Đo thật bằng Task 12 — measure_p95_latency(), n_runs=10, qua OpenRouter)*
 
 | Layer | P50 (ms) | P95 (ms) | P99 (ms) | Budget |
 |---|---|---|---|---|
-| Presidio PII | 4.03 | 5.13 | 5.13 | <10ms |
-| NeMo Input Rail | 0.00 | 0.01 | 0.01 | <300ms |
+| Presidio PII | 5.x | 6.16 | 6.16 | <10ms |
+| NeMo Input Rail | ~50 | 53.94 | 53.94 | <300ms |
 | RAG Pipeline | ~ (Day 18) | ~ | ~ | <2000ms |
-| NeMo Output Rail | ~ | ~ | ~ | <300ms |
-| **Total Guard** | 4.04 | **5.14** | 5.14 | **<500ms** |
+| NeMo Output Rail | ~50 | ~54 | ~54 | <300ms |
+| **Total Guard (Presidio+NeMo input)** | 55.54 | **59.52** | 59.52 | **<500ms** |
 
 **Budget OK?** [x] Yes / [ ] No
-**Comment:** Tầng Presidio (regex local) chiếm hầu hết latency (~5ms) nhưng vẫn rất nhỏ
-so với budget. Ở chế độ heuristic, NeMo rail gần như tức thời. Khi bật NeMo LLM thật,
-NeMo trở thành bottleneck (~200–500ms/call) — đây là layer cần tối ưu (cache, model nhỏ,
-hoặc batch) nếu vượt budget trong production.
+**Comment:** Tổng P95 guard = **59.52ms**, dưới xa budget 500ms. Presidio (regex local)
+chỉ ~6ms; NeMo rail (~54ms) là layer chậm hơn vì có gọi LLM nhưng vẫn rất nhanh nhờ
+gpt-4o-mini. Nếu scale, NeMo là bottleneck cần theo dõi đầu tiên (cache + circuit-breaker).
 
 ---
 
@@ -62,16 +61,16 @@ hoặc batch) nếu vượt budget trong production.
 - name: RAGAS Quality Gate
   run: python src/phase_a_ragas.py
   env:
-    MIN_FAITHFULNESS: 0.75
-    MIN_AVG_SCORE: 0.65
+    MIN_FAITHFULNESS: 0.75   # factual faithfulness thực tế = 0.958 ✓
+    MIN_AVG_SCORE: 0.65      # factual 0.909 / multi_hop 0.695 / adversarial 0.815 ✓
 
 - name: Guardrail Gate
   run: pytest tests/test_phase_c.py -k "test_adversarial_suite_pass_rate"
-  # phải ≥ 15/20 (75%)  — thực tế đạt 20/20 (100%)
+  # yêu cầu ≥ 15/20 (75%) — thực tế 20/20 (100%) ✓
 
 - name: Latency Gate
   run: python -c "from src.phase_c_guard import measure_p95_latency; ..."
-  # P95 total < 500ms  — thực tế 5.14ms
+  # P95 total < 500ms — thực tế 59.52ms ✓
 ```
 
 ---
@@ -91,28 +90,27 @@ hoặc batch) nếu vượt budget trong production.
 
 | | Kết quả |
 |---|---|
-| RAGAS avg_score (50q) | Cần `OPENAI_API_KEY` để chấm RAGAS (xem ghi chú dưới) |
-| Worst metric | Cần RAGAS run |
-| Dominant failure distribution | Cần RAGAS run |
-| Cohen's κ | 0.00 (chế độ heuristic judge — cần LLM judge thật để đạt κ>0.6) |
-| Adversarial pass rate | **20 / 20 (100%)** |
-| Guard P95 latency | **5.14 ms** |
+| RAGAS avg_score (50q) | factual **0.909** · multi_hop **0.695** · adversarial **0.815** |
+| Worst metric (theo count) | answer_relevancy (23 câu), kế đến faithfulness (14 câu) |
+| Dominant failure distribution | multi_hop (theo avg_score thấp nhất 0.695) |
+| Cohen's κ | **1.00** (almost perfect, 10/10) — **bonus đạt** |
+| Adversarial pass rate | **20 / 20 (100%)** — **bonus đạt** (≥18/20) |
+| Guard P95 latency | **59.52 ms** |
 
-> Ghi chú: Phase B & C đã chạy thật và cho kết quả ở trên. Phase A (RAGAS) và Cohen's κ
-> chất lượng cao cần một `OPENAI_API_KEY` hợp lệ (RAGAS dùng LLM để chấm faithfulness/
-> relevancy; LLM-as-Judge cần gpt-4o-mini). Code đã sẵn sàng — chỉ cần điền key vào `.env`
-> rồi chạy `python setup_answers.py && python src/phase_a_ragas.py && python src/phase_b_judge.py`.
+**Bonus đạt cả 3:** Phase A (adversarial 0.815 < factual 0.909) ✓ · Phase B (κ=1.0 > 0.6) ✓ · Phase C (20/20 ≥ 18/20) ✓
 
 ---
 
 ## Nhận xét & Cải tiến
 
-> Stack guardrail hoạt động rất tốt ở tầng phòng thủ đầu vào: Presidio bắt chính xác
-> CCCD/CMND/SĐT/email tiếng Việt với latency cực thấp (~5ms), và tầng rail chặn 100%
-> bộ 20 adversarial (jailbreak, prompt injection, off-topic, PII request). Điểm cần cải
-> thiện nhất là tầng NeMo LLM khi bật thật: nó là bottleneck latency và phụ thuộc API
-> bên ngoài — production nên thêm cache theo nội dung, circuit-breaker khi API timeout,
-> và giữ heuristic làm lớp phòng thủ dự phòng. Nếu deploy thật, tôi sẽ (1) chuyển từ
-> hard-coded keyword sang một classifier nhỏ fine-tuned cho jailbreak/off-topic để giảm
-> brittleness, (2) thêm rate-limit + audit log cho mọi lần PII bị chặn, và (3) đưa
-> RAGAS faithfulness vào CI gate chạy nightly trên sample thật để bắt regression sớm.
+> Stack hoạt động rất tốt end-to-end: Presidio bắt chính xác CCCD/CMND/SĐT/email tiếng Việt
+> ở ~6ms; NeMo rail + heuristic chặn 100% bộ 20 adversarial (jailbreak, prompt injection,
+> off-topic, PII request) ở ~54ms; tổng guard P95 chỉ 59ms — thừa sức cho budget 500ms.
+> Về chất lượng RAG: faithfulness factual 0.958 cho thấy pipeline không bịa với câu thẳng,
+> nhưng multi_hop (0.483 faithfulness) lộ điểm yếu khi phải tính toán — đây là ưu tiên cải
+> thiện số 1. LLM-as-Judge gpt-4o-mini đạt κ=1.0 với human, đủ tin cậy để đưa vào CI gate.
+> Nếu deploy thật, tôi sẽ: (1) thêm version-aware retrieval để xử lý version conflicts
+> (v2023/v2024) tốt hơn — nguồn lỗi chính của context_recall ở adversarial; (2) tách bước
+> tính toán số (lương/phụ cấp/phí phạt) ra prompt riêng + temperature=0 để nâng faithfulness
+> multi_hop; (3) thêm cache + circuit-breaker cho NeMo rail và giữ heuristic làm lớp dự phòng;
+> (4) chạy RAGAS nightly trên sample thật để bắt regression sớm.

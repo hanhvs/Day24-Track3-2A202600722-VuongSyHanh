@@ -249,14 +249,53 @@ def bias_report(judge_results: list[JudgeResult]) -> dict:
 # ─── Báo cáo & judge tuyệt đối (cho Cohen κ) ─────────────────────────────────
 
 def quality_label(question: str, model_answer: str, ground_truth: str) -> int:
-    """Judge 1 answer là good (1) hay bad (0) bằng cách so với ground_truth.
+    """Judge 1 answer là good (1) hay bad (0) bằng direct grading so với ground_truth.
 
-    So sánh pairwise model_answer (A) vs ground_truth (B):
-        - Nếu model_answer thắng hoặc tie → answer tốt → label 1
-        - Nếu ground_truth thắng → model_answer kém hơn → label 0
+    Hỏi LLM trực tiếp: câu trả lời có ĐÚNG về mặt nội dung so với đáp án tham chiếu
+    không? Trả 1 nếu đúng/chấp nhận được, 0 nếu sai/thiếu thông tin quan trọng.
+
+    Cách này phù hợp để so với human labels (vốn đánh giá tính đúng của model_answer),
+    chính xác hơn so với pairwise vs ground_truth (ground_truth luôn 'thắng' → bias 0).
     """
-    verdict = swap_and_average(question, model_answer, ground_truth)
-    return 1 if verdict.final_winner in {"A", "tie"} else 0
+    # Fallback heuristic khi không có API key: so trùng token số/keyword đơn giản.
+    if not OPENAI_API_KEY:
+        gt_tokens = set(ground_truth.lower().split())
+        ans_tokens = set(model_answer.lower().split())
+        overlap = len(gt_tokens & ans_tokens) / max(len(gt_tokens), 1)
+        return 1 if overlap >= 0.4 else 0
+
+    prompt = f"""Bạn là giám khảo chấm câu trả lời RAG về chính sách nhân sự.
+
+Câu hỏi: {question}
+
+Đáp án THAM CHIẾU (chuẩn): {ground_truth}
+
+Câu trả lời CẦN CHẤM: {model_answer}
+
+Câu trả lời cần chấm có ĐÚNG về mặt nội dung/sự kiện so với đáp án tham chiếu không?
+- Trả 1 nếu đúng và đầy đủ các ý chính (chấp nhận khác biệt cách diễn đạt).
+- Trả 0 nếu sai số liệu, sai chính sách, thiếu ý quan trọng, hoặc trả lời theo phiên bản cũ.
+
+Chỉ trả JSON: {{"label": 1 hoặc 0, "reason": "ngắn gọn"}}"""
+    try:
+        from openai import OpenAI
+        client = OpenAI()
+        resp = client.chat.completions.create(
+            model=JUDGE_MODEL,
+            messages=[
+                {"role": "system", "content": "Bạn là giám khảo nghiêm túc. Chỉ trả JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+        )
+        parsed = json.loads(resp.choices[0].message.content)
+        return 1 if int(parsed.get("label", 0)) == 1 else 0
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️  quality_label LLM failed: {e} — dùng heuristic.")
+        gt_tokens = set(ground_truth.lower().split())
+        ans_tokens = set(model_answer.lower().split())
+        overlap = len(gt_tokens & ans_tokens) / max(len(gt_tokens), 1)
+        return 1 if overlap >= 0.4 else 0
 
 
 def save_phase_b_report(judge_results: list[JudgeResult], bias: dict,

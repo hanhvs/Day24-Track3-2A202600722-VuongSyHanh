@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Báo cáo Lab 24 — Eval + Guardrail Stack | Vương Sỹ Hành</title>
+<style>
+  :root{
+    --bg:#0f1420; --card:#1a2130; --card2:#222b3d; --ink:#e8edf6; --muted:#9fb0c8;
+    --accent:#5eead4; --accent2:#7c9cff; --good:#34d399; --warn:#fbbf24; --bad:#f87171;
+    --line:#2c3850;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    background:linear-gradient(160deg,#0b0f1a,#0f1420 40%,#101726);color:var(--ink);line-height:1.6}
+  .wrap{max-width:1000px;margin:0 auto;padding:32px 20px 80px}
+  header.hero{background:linear-gradient(135deg,#16203a,#1c2742);border:1px solid var(--line);
+    border-radius:18px;padding:30px 32px;margin-bottom:26px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+  h1{margin:0 0 6px;font-size:26px;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:14px}
+  .meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+  .chip{background:var(--card2);border:1px solid var(--line);border-radius:999px;
+    padding:6px 14px;font-size:13px;color:var(--muted)}
+  .chip b{color:var(--ink)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:26px 0}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;text-align:center}
+  .kpi .v{font-size:30px;font-weight:800;background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .kpi .l{font-size:12px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.6px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:24px 26px;margin-bottom:22px}
+  h2{margin:0 0 16px;font-size:19px;display:flex;align-items:center;gap:10px}
+  h2 .num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
+    border-radius:8px;background:linear-gradient(135deg,var(--accent2),#5b6cff);color:#0b0f1a;
+    font-size:14px;font-weight:800}
+  h3{font-size:15px;color:var(--accent);margin:20px 0 10px}
+  table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  tbody tr:hover{background:rgba(124,156,255,.06)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .best{color:var(--good);font-weight:700}
+  .low{color:var(--bad);font-weight:700}
+  .mid{color:var(--warn);font-weight:600}
+  .bar{position:relative;height:9px;border-radius:5px;background:var(--card2);overflow:hidden;min-width:90px}
+  .bar > span{position:absolute;inset:0 auto 0 0;border-radius:5px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
+  .pill.ok{background:rgba(52,211,153,.15);color:var(--good);border:1px solid rgba(52,211,153,.35)}
+  .pill.no{background:rgba(248,113,113,.15);color:var(--bad);border:1px solid rgba(248,113,113,.35)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .box{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .box .big{font-size:34px;font-weight:800;color:var(--accent)}
+  code,pre{font-family:"SF Mono",Menlo,Consolas,monospace}
+  pre{background:#0b0f1a;border:1px solid var(--line);border-radius:10px;padding:14px;
+    overflow-x:auto;font-size:13px;color:#cbd5e9}
+  .note{font-size:13px;color:var(--muted);margin-top:10px}
+  ul.clean{margin:8px 0;padding-left:20px}ul.clean li{margin:6px 0}
+  footer{text-align:center;color:var(--muted);font-size:12px;margin-top:30px}
+  @media(max-width:760px){.kpis{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>🛡️ Lab 24 — Production Eval + Guardrail Stack</h1>
+    <div class="sub">Báo cáo kết quả · Track 3 — Eval + Guardrail</div>
+    <div class="meta">
+      <span class="chip">Sinh viên: <b>Vương Sỹ Hành</b></span>
+      <span class="chip">MSSV: <b>2A202600722</b></span>
+      <span class="chip">LLM: <b>gpt-4o-mini</b> (OpenRouter)</span>
+      <span class="chip">Vector DB: <b>Qdrant 1.18</b></span>
+      <span class="chip">Embedding RAG: <b>bge-m3</b></span>
+    </div>
+  </header>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v">22/22</div><div class="l">check_lab</div></div>
+    <div class="kpi"><div class="v">40/40</div><div class="l">pytest</div></div>
+    <div class="kpi"><div class="v">+10</div><div class="l">bonus đạt</div></div>
+    <div class="kpi"><div class="v">0</div><div class="l">TODO còn lại</div></div>
+  </div>
+
+  <section>
+    <h2><span class="num">①</span> Phase A — RAGAS Production Eval</h2>
+    <h3>Điểm trung bình theo distribution</h3>
+    <table>
+      <thead><tr><th>Metric</th><th class="num">factual (20)</th><th class="num">multi_hop (20)</th><th class="num">adversarial (10)</th></tr></thead>
+      <tbody>
+        <tr><td>faithfulness</td><td class="num best">0.958</td><td class="num low">0.483</td><td class="num">0.900</td></tr>
+        <tr><td>answer_relevancy</td><td class="num">0.802</td><td class="num low">0.543</td><td class="num">0.660</td></tr>
+        <tr><td>context_precision</td><td class="num">0.975</td><td class="num best">1.000</td><td class="num">0.983</td></tr>
+        <tr><td>context_recall</td><td class="num">0.900</td><td class="num">0.754</td><td class="num mid">0.717</td></tr>
+        <tr><td><b>avg_score</b></td>
+          <td class="num"><b class="best">0.909</b><div class="bar"><span style="width:90.9%"></span></div></td>
+          <td class="num"><b class="low">0.695</b><div class="bar"><span style="width:69.5%"></span></div></td>
+          <td class="num"><b class="mid">0.815</b><div class="bar"><span style="width:81.5%"></span></div></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Failure cluster matrix (worst_metric × distribution)</h3>
+    <table>
+      <thead><tr><th>worst_metric</th><th class="num">factual</th><th class="num">multi_hop</th><th class="num">adversarial</th><th class="num">Total</th></tr></thead>
+      <tbody>
+        <tr><td>faithfulness</td><td class="num">2</td><td class="num low">11</td><td class="num">1</td><td class="num">14</td></tr>
+        <tr><td>answer_relevancy</td><td class="num low">13</td><td class="num">7</td><td class="num">3</td><td class="num">23</td></tr>
+        <tr><td>context_precision</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr>
+        <tr><td>context_recall</td><td class="num">4</td><td class="num">2</td><td class="num">6</td><td class="num">12</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Bottom 10 — câu yếu nhất</h3>
+    <table>
+      <thead><tr><th class="num">#</th><th>Distribution</th><th class="num">avg_score</th><th>worst_metric</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>multi_hop</td><td class="num low">0.333</td><td>faithfulness</td></tr>
+        <tr><td class="num">2</td><td>multi_hop</td><td class="num low">0.375</td><td>faithfulness</td></tr>
+        <tr><td class="num">3</td><td>adversarial</td><td class="num low">0.417</td><td>faithfulness</td></tr>
+        <tr><td class="num">4</td><td>multi_hop</td><td class="num mid">0.458</td><td>answer_relevancy</td></tr>
+        <tr><td class="num">5</td><td>multi_hop</td><td class="num mid">0.500</td><td>faithfulness</td></tr>
+        <tr><td class="num">6</td><td>multi_hop</td><td class="num mid">0.537</td><td>context_recall</td></tr>
+        <tr><td class="num">7</td><td>multi_hop</td><td class="num mid">0.539</td><td>faithfulness</td></tr>
+        <tr><td class="num">8</td><td>multi_hop</td><td class="num mid">0.625</td><td>answer_relevancy</td></tr>
+        <tr><td class="num">9</td><td>multi_hop</td><td class="num mid">0.650</td><td>faithfulness</td></tr>
+        <tr><td class="num">10</td><td>multi_hop</td><td class="num mid">0.664</td><td>faithfulness</td></tr>
+      </tbody>
+    </table>
+    <p class="note">📌 9/10 câu tệ nhất thuộc <b>multi_hop</b> (cần tính toán + ghép nhiều tài liệu).
+      <span class="pill ok">Bonus A ✓ adversarial 0.815 &lt; factual 0.909</span></p>
+  </section>
+
+  <section>
+    <h2><span class="num">②</span> Phase B — LLM-as-Judge</h2>
+    <div class="grid2">
+      <div class="box">
+        <div class="l" style="color:var(--muted);font-size:12px;text-transform:uppercase">Cohen's κ vs human</div>
+        <div class="big">1.00</div>
+        <div>almost perfect · <b>10/10</b> agreement</div>
+        <p class="note">Nhận đúng cả câu bẫy: sai ngưỡng phê duyệt 55tr, trả lời theo v2023 hết hiệu lực, VPN cá nhân bị cấm.</p>
+      </div>
+      <div class="box">
+        <div class="l" style="color:var(--muted);font-size:12px;text-transform:uppercase">Bias report</div>
+        <table style="margin-top:6px">
+          <tbody>
+            <tr><td>Position bias rate</td><td class="num mid">16.7%</td></tr>
+            <tr><td>Position bias count</td><td class="num">1 / 6</td></tr>
+            <tr><td>Verbosity bias*</td><td class="num">100%</td></tr>
+          </tbody>
+        </table>
+        <p class="note">*Artifact của cặp answer-vs-ground_truth, không phải bias thật. Case #21 → swap-and-average phát hiện inconsistency.</p>
+      </div>
+    </div>
+    <p class="note"><span class="pill ok">Bonus B ✓ κ = 1.00 &gt; 0.6</span></p>
+  </section>
+
+  <section>
+    <h2><span class="num">③</span> Phase C — Guardrails (Presidio + NeMo)</h2>
+    <div class="grid2">
+      <div class="box">
+        <div class="l" style="color:var(--muted);font-size:12px;text-transform:uppercase">Adversarial suite</div>
+        <div class="big">20/20</div>
+        <div>pass rate <b>100%</b></div>
+        <p class="note">Categories: jailbreak · off_topic · pii_injection · prompt_injection</p>
+      </div>
+      <div class="box">
+        <div class="l" style="color:var(--muted);font-size:12px;text-transform:uppercase">PII detection (Presidio)</div>
+        <pre style="margin:8px 0 0">CCCD 034095001234 → &lt;VN_CCCD&gt;
+SĐT  0987654321   → &lt;VN_PHONE&gt;</pre>
+        <p class="note">Phát hiện VN_CCCD, VN_PHONE, EMAIL (score 0.9).</p>
+      </div>
+    </div>
+
+    <h3>Latency (P50/P95/P99 · n_runs=10)</h3>
+    <table>
+      <thead><tr><th>Layer</th><th class="num">P50 (ms)</th><th class="num">P95 (ms)</th><th class="num">P99 (ms)</th><th>Budget</th></tr></thead>
+      <tbody>
+        <tr><td>Presidio PII</td><td class="num">5.29</td><td class="num best">6.16</td><td class="num">6.16</td><td>&lt;10ms ✓</td></tr>
+        <tr><td>NeMo Input Rail</td><td class="num">50.21</td><td class="num best">53.94</td><td class="num">53.94</td><td>&lt;300ms ✓</td></tr>
+        <tr><td><b>Total Guard</b></td><td class="num"><b>55.54</b></td><td class="num"><b class="best">59.52</b></td><td class="num">59.52</td><td><b>&lt;500ms ✓</b></td></tr>
+      </tbody>
+    </table>
+    <p class="note"><span class="pill ok">Bonus C ✓ 20/20 ≥ 18/20</span>
+      &nbsp; Tổng P95 guard <b>59.52ms</b> — dưới xa budget 500ms.</p>
+  </section>
+
+  <section>
+    <h2><span class="num">④</span> CI/CD Gates &amp; Bonus</h2>
+    <div class="grid2">
+      <div>
+        <h3>CI gates</h3>
+        <table>
+          <thead><tr><th>Gate</th><th class="num">Thực tế</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>RAGAS faithfulness ≥ 0.75</td><td class="num">0.958</td><td><span class="pill ok">PASS</span></td></tr>
+            <tr><td>Adversarial ≥ 18/20</td><td class="num">20/20</td><td><span class="pill ok">PASS</span></td></tr>
+            <tr><td>Guard P95 &lt; 500ms</td><td class="num">59.5ms</td><td><span class="pill ok">PASS</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h3>Bonus (+10)</h3>
+        <table>
+          <thead><tr><th>Phase</th><th class="num">Kết quả</th><th>Điểm</th></tr></thead>
+          <tbody>
+            <tr><td>A — adv &lt; factual</td><td class="num">0.815&lt;0.909</td><td class="best">+4</td></tr>
+            <tr><td>B — κ &gt; 0.6</td><td class="num">1.00</td><td class="best">+3</td></tr>
+            <tr><td>C — adv ≥ 18/20</td><td class="num">20/20</td><td class="best">+3</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">⑤</span> Hướng cải thiện</h2>
+    <ul class="clean">
+      <li><b>Version-aware retrieval</b> — xử lý version conflicts (v2023/v2024, VPN v1.3); nguồn lỗi chính của context_recall ở adversarial (6/10).</li>
+      <li><b>Tách bước tính toán</b> số (lương/phụ cấp/phí phạt) ra prompt riêng + temperature=0 để nâng faithfulness multi_hop (0.483).</li>
+      <li><b>Cache + circuit-breaker</b> cho NeMo rail, giữ heuristic làm lớp dự phòng khi LLM timeout.</li>
+      <li><b>RAGAS nightly</b> + đối chiếu mẫu human-labeled định kỳ để bắt regression và drift của judge.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Báo cáo tạo từ kết quả chạy thật · Day 24, Track 3 · Vương Sỹ Hành (2A202600722)
+  </footer>
+</div>
+</body>
+</html>
